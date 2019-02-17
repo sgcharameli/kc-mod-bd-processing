@@ -1,7 +1,8 @@
 package practica.faseii
 
-import org.apache.spark.sql.types.{DateType, DoubleType, StringType, StructType}
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.catalyst.encoders.RowEncoder
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.functions._
 import practica.common.Constants
 import practica.common.Utils._
@@ -12,7 +13,7 @@ object FaseII {
   val realStateAveragePriceSchema = new StructType()
       .add("localidad", StringType)
       .add("precioMetro2medio", DoubleType)
-      .add("timestamp", DateType)
+      .add("alertaEnviada", BooleanType)
 
   def main(args: Array[String]): Unit = {
 
@@ -42,33 +43,12 @@ object FaseII {
     val realStatesRawDF = sparkSession.readStream
       .schema(realStateAveragePriceSchema)
       .json(sourceDirectoryPath)
+      .withColumn("alertaEnviada", lit(false))
 
 
     // Realizamos la agrupación por localidad, precio medio y lo introducimos en una ventana temporal de 1 hora
-    val realStatesOrderedData = realStatesRawDF.groupBy($"localidad", $"precioMetro2medio", window(org.apache.spark.sql.functions.current_timestamp(), "1 hour"))
+    val realStatesOrderedData = realStatesRawDF.groupBy($"localidad", $"precioMetro2medio", $"alertaEnviada", window(org.apache.spark.sql.functions.current_timestamp(), "1 day"))
       .count().orderBy($"precioMetro2medio".desc)
-
-
-    // Lanzar alerta
-    realStatesOrderedData.writeStream
-      .format("console")
-      .outputMode("complete")
-      .foreachBatch{ (batchDF: DataFrame, batchId: Long) => {
-
-        println("###########################################################")
-        println("Analizando batchDF schema:" + batchDF.printSchema())
-        println("Analizando batchId:" + batchId)
-        println("Analizando batchDF:" + batchDF.show())
-        println("Cantidad de inmuebles:" + batchDF.count())
-        println("###########################################################")
-
-      } }
-      .start().awaitTermination()
-
-
-
-    //realStatesOrderedData.writeStream.format("console").outputMode("complete").start()
-
 
 
     def enviarAlerta(realStatesAlerta: DataFrame) = {
@@ -79,24 +59,31 @@ object FaseII {
     }
 
     // Enviamos las alertas con los inmuebles que superen el límite
+    // La idea era agrupar los posibles inmuebles repetidos en una ventana temporal de 1 día
+    // con el fin de no generar varias alertas para un mismo inmueble repetido con el mismo valor.
+    // El caso es que con el planteamiento actual, cada vez que se ejecute el siguiente filtro,
+    // el valor que le dará el streaming será de envío de alerta a false, por lo que de momento,
+    // cualquier inmueble que supere el límite generará dicha alerta :/
     val queryEnvioAlertas = realStatesOrderedData.writeStream
       .format("console")
       .outputMode("complete")
       .foreachBatch{ (batchDF: DataFrame, batchId: Long) => {
 
         println("Analizando batchId:" + batchId)
-        val realStatesDFAlerta = batchDF.filter(r => r.getDouble(1) > broadcastLim.value)
+        val realStatesDFAlerta = batchDF.filter(r => r.getDouble(1) > broadcastLim.value && !r.getBoolean(2))
+            .map(r => {
+              Row(r.getString(0), r.getDouble(1), true)
+            })(RowEncoder(realStateAveragePriceSchema))
+            .toDF()
+
         enviarAlerta(realStatesDFAlerta)
       } }
       .start()
 
+
     queryEnvioAlertas.awaitTermination()
 
-
     sparkSession.stop()
-
-
-
 
   }
 

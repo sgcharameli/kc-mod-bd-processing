@@ -1,2 +1,8 @@
 *.class
 *.log
+
+bd-processing-project/.idea
+bd-processing-project/target
+bd-processing-project/project/target
+
+checkpoints/*

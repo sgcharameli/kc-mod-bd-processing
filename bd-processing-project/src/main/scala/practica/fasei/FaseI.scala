@@ -48,8 +48,8 @@ object FaseI {
       .map(row => (row._1, row._2, row._3 * broadcastFeetMetersCoef.value))
       .map(row => (row._1, row._2 / row._3))
 
-    // Convertimos a Dataframe y damos nombre a las columnas
-    val realStatesDF = realStates.toDF("localidad", "precioMetro2")
+    // Convertimos a Dataframe, damos nombre a las columnas y cacheamos después de las transformaciones
+    val realStatesDF = realStates.toDF("localidad", "precioMetro2").cache()
     realStatesDF.show()
     realStatesDF.printSchema()
 

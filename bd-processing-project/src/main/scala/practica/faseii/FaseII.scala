@@ -4,6 +4,7 @@ import org.apache.spark.sql.catalyst.encoders.RowEncoder
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.functions._
+import practica.Main.args
 import practica.common.Constants
 import practica.common.Utils._
 
@@ -17,12 +18,17 @@ object FaseII {
 
   def main(args: Array[String]): Unit = {
 
+    var lim: Double = 3500
+
+    if (args.length >= 1) {
+      lim = args(0).toDouble
+    }
+
+    println("Configurando el valor del límite a: " + lim)
+
     // Definición de constantes
     val sourceDirectoryPath = Constants.realStatePath
     val checkpointPath = s"${Constants.checkpointsPath}/fase-ii"
-
-    // Definimos constantes propias de este objeto
-    val lim: Double = 3500
 
     // Construcción de la sesión de Spark
     val sparkSession = SparkSession.builder()
